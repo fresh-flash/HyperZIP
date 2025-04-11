@@ -1,0 +1,7 @@
+customtkinter>=5.0.0
+pillow>=9.0.0
+htmlmin>=0.1.12
+jsmin>=3.0.0
+csscompressor>=0.9.5
+tinify>=1.6.0
+pyinstaller>=5.0.0
