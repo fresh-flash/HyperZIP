@@ -26,7 +26,7 @@ class HyperZipApp(ctk.CTk):
         super().__init__()
 
         self.title(APP_NAME)
-        self.geometry("800x750") # Adjusted size for better layout
+        self.geometry("700x700")
         ctk.set_appearance_mode("System") # Modes: "System" (default), "Dark", "Light"
         ctk.set_default_color_theme("blue") # Themes: "blue" (default), "green", "dark-blue"
 
@@ -46,6 +46,8 @@ class HyperZipApp(ctk.CTk):
         self.exclusions_var = tk.StringVar(value=DEFAULT_SETTINGS["ARCHIVE_EXCLUSIONS"]) # New variable
         self.minify_var = tk.BooleanVar(value=DEFAULT_SETTINGS["ENABLE_MINIFICATION"])
         self.compress_images_var = tk.BooleanVar(value=DEFAULT_SETTINGS["ENABLE_IMAGE_COMPRESSION"])
+        self.optimize_jpeg_var = tk.BooleanVar(value=DEFAULT_SETTINGS["ENABLE_JPEG_OPTIMIZATION"])
+        self.optimize_png_var = tk.BooleanVar(value=DEFAULT_SETTINGS["ENABLE_PNG_OPTIMIZATION"])
         self.tinypng_api_key_var = tk.StringVar(value=DEFAULT_SETTINGS["TINIFY_API_KEY"])
         self.png_compressor_var = tk.StringVar(value="tinypng") # Default to tinypng
         self.png_level_start_var = tk.IntVar(value=DEFAULT_SETTINGS["INITIAL_PNG_OPTIMIZATION_LEVEL"])
@@ -59,6 +61,10 @@ class HyperZipApp(ctk.CTk):
         # --- Processing state ---
         self.is_processing = False
         self.log_queue = queue.Queue()
+        
+        # --- Progress bar ---
+        self.progress_var = tk.DoubleVar(value=0.0)  # Initialize progress to 0
+        self.progress_bar = None  # Will be created later
 
         # --- UI Creation ---
         self.create_widgets()
@@ -88,26 +94,15 @@ class HyperZipApp(ctk.CTk):
         self.profile_combobox = ctk.CTkComboBox(archive_frame, variable=self.archive_profile_var, values=ARCHIVE_PROFILES, command=self.update_archiver_path_state)
         self.profile_combobox.grid(row=0, column=1, columnspan=2, padx=5, pady=5, sticky="ew")
 
-        # WinRAR Path
-        ctk.CTkLabel(archive_frame, text="WinRAR Path:").grid(row=1, column=0, padx=5, pady=5, sticky="w")
-        self.winrar_entry = ctk.CTkEntry(archive_frame, textvariable=self.winrar_path_var)
-        self.winrar_entry.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
-        self.browse_winrar_button = ctk.CTkButton(archive_frame, text="Browse...", width=100, command=lambda: self.browse_executable("WinRAR", self.winrar_path_var))
-        self.browse_winrar_button.grid(row=1, column=2, padx=5, pady=5)
+        # Archiver Path
+        self.archiver_path_label = ctk.CTkLabel(archive_frame, text="")
+        self.archiver_path_label.grid(row=1, column=0, padx=5, pady=5, sticky="w")
 
-        # 7-Zip Path
-        ctk.CTkLabel(archive_frame, text="7-Zip Path:").grid(row=2, column=0, padx=5, pady=5, sticky="w")
-        self.sevenzip_entry = ctk.CTkEntry(archive_frame, textvariable=self.sevenzip_path_var)
-        self.sevenzip_entry.grid(row=2, column=1, padx=5, pady=5, sticky="ew")
-        self.browse_sevenzip_button = ctk.CTkButton(archive_frame, text="Browse...", width=100, command=lambda: self.browse_executable("7-Zip", self.sevenzip_path_var))
-        self.browse_sevenzip_button.grid(row=2, column=2, padx=5, pady=5)
-
-        # ZPAQ Path
-        ctk.CTkLabel(archive_frame, text="ZPAQ Path:").grid(row=3, column=0, padx=5, pady=5, sticky="w")
-        self.zpaq_entry = ctk.CTkEntry(archive_frame, textvariable=self.zpaq_path_var)
-        self.zpaq_entry.grid(row=3, column=1, padx=5, pady=5, sticky="ew")
-        self.browse_zpaq_button = ctk.CTkButton(archive_frame, text="Browse...", width=100, command=lambda: self.browse_executable("ZPAQ", self.zpaq_path_var))
-        self.browse_zpaq_button.grid(row=3, column=2, padx=5, pady=5)
+        self.archiver_entry = ctk.CTkEntry(archive_frame, textvariable=tk.StringVar()) # Dummy entry for now
+        self.archiver_entry.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
+        
+        self.browse_archiver_button = ctk.CTkButton(archive_frame, text="Browse...", width=100, command=lambda: self.browse_executable("", self.archiver_entry.configure(textvariable=tk.StringVar()) )) # Dummy button for now
+        self.browse_archiver_button.grid(row=1, column=2, padx=5, pady=5)
         
         # Exclusions Entry
         ctk.CTkLabel(archive_frame, text="Exclusions (space-separated):").grid(row=4, column=0, padx=5, pady=5, sticky="w")
@@ -126,6 +121,12 @@ class HyperZipApp(ctk.CTk):
 
         self.compress_images_checkbox = ctk.CTkCheckBox(optim_frame, text="Enable Image Compression (TinyPNG)", variable=self.compress_images_var, command=self.update_image_compression_state)
         self.compress_images_checkbox.grid(row=1, column=0, padx=5, pady=5, sticky="w")
+        
+        self.optimize_jpeg_checkbox = ctk.CTkCheckBox(optim_frame, text="Enable JPEG Optimization", variable=self.optimize_jpeg_var, command=self.update_image_compression_state)
+        self.optimize_jpeg_checkbox.grid(row=2, column=0, padx=5, pady=5, sticky="w")
+        
+        self.optimize_png_checkbox = ctk.CTkCheckBox(optim_frame, text="Enable PNG Optimization", variable=self.optimize_png_var, command=self.update_image_compression_state)
+        self.optimize_png_checkbox.grid(row=3, column=0, padx=5, pady=5, sticky="w")
 
         # --- 4. Image Compression Details ---
         self.img_details_frame = ctk.CTkFrame(self, fg_color="transparent") # Use transparent bg or a specific color
@@ -202,6 +203,11 @@ class HyperZipApp(ctk.CTk):
         self.start_button = ctk.CTkButton(self, text="Start Processing", command=self.start_processing)
         self.start_button.grid(row=6, column=0, padx=10, pady=10, sticky="ew")
         
+        # --- 7. Progress Bar ---
+        self.progress_bar = ctk.CTkProgressBar(self, variable=self.progress_var)
+        self.progress_bar.grid(row=8, column=0, padx=10, pady=(0, 10), sticky="ew")
+        self.progress_bar.set(0)
+        
         # --- 7. Copyright Information ---
         copyright_frame = ctk.CTkFrame(self)
         copyright_frame.grid(row=7, column=0, padx=10, pady=(5, 10), sticky="ew")
@@ -254,6 +260,9 @@ class HyperZipApp(ctk.CTk):
         state = "normal" if self.compress_images_var.get() else "disabled"
         for widget in self.img_details_frame.winfo_children():
             try:
+                if isinstance(widget, ctk.CTkCheckBox) and (widget == self.optimize_jpeg_checkbox or widget == self.optimize_png_checkbox):
+                    continue  # Skip checkboxes at this point
+                
                 widget.configure(state=state)
             except tk.TclError: # Some widgets like Labels don't have state
                 pass
@@ -264,6 +273,10 @@ class HyperZipApp(ctk.CTk):
             self.png_min_slider.configure(state=state)
             self.jpeg_min_slider.configure(state=state)
             # Entry and Checkbox already handled by the loop
+        
+        jpeg_checkbox_state = "normal" if self.compress_images_var.get() else "disabled"
+        self.optimize_jpeg_checkbox.configure(state=jpeg_checkbox_state)
+        self.optimize_png_checkbox.configure(state=jpeg_checkbox_state)
 
     def update_archiver_path_state(self, *args):
         """Enable/disable archiver path entries based on selected profile."""
@@ -354,6 +367,8 @@ class HyperZipApp(ctk.CTk):
         self.log_message(f"Profile: {profile}")
         self.log_message(f"Minify: {self.minify_var.get()}")
         self.log_message(f"Compress Images: {self.compress_images_var.get()}")
+        self.log_message(f"Optimize JPEG: {self.optimize_jpeg_var.get()}")
+        self.log_message(f"Optimize PNG: {self.optimize_png_var.get()}")
         if self.compress_images_var.get():
              self.log_message(f"  PNG Compressor: {self.png_compressor_var.get()}")
              self.log_message(f"  PNG Level: {self.png_level_start_var.get()} -> {self.png_level_min_var.get()}")
@@ -366,6 +381,7 @@ class HyperZipApp(ctk.CTk):
         self.is_processing = True
         self.start_button.configure(state="disabled", text="Processing...")
         self.save_config()  # Save current settings
+        self.progress_bar.set(0)
         
         # Prepare settings dictionary
         settings = {
@@ -376,6 +392,8 @@ class HyperZipApp(ctk.CTk):
             "zpaq_path": self.zpaq_path_var.get(),
             "ENABLE_MINIFICATION": self.minify_var.get(),
             "ENABLE_IMAGE_COMPRESSION": self.compress_images_var.get(),
+            "ENABLE_JPEG_OPTIMIZATION": self.optimize_jpeg_var.get(),
+            "ENABLE_PNG_OPTIMIZATION": self.optimize_png_var.get(),
             "TINIFY_API_KEY": self.tinypng_api_key_var.get(),
             "png_compressor": self.png_compressor_var.get(),
             "INITIAL_PNG_OPTIMIZATION_LEVEL": self.png_level_start_var.get(),
@@ -466,6 +484,7 @@ class HyperZipApp(ctk.CTk):
                 if message == "__PROCESSING_DONE__":
                     self.is_processing = False
                     self.start_button.configure(state="normal", text="Start Processing")
+                    self.progress_bar.set(1)
                 else:
                     # Regular log message
                     self.log_message(message)
@@ -492,6 +511,8 @@ class HyperZipApp(ctk.CTk):
                     self.zpaq_path_var.set(config.get("zpaq_path", DEFAULT_SETTINGS["zpaq_path"]))
                     self.minify_var.set(config.get("enable_minification", DEFAULT_SETTINGS["ENABLE_MINIFICATION"]))
                     self.compress_images_var.set(config.get("enable_image_compression", DEFAULT_SETTINGS["ENABLE_IMAGE_COMPRESSION"]))
+                    self.optimize_jpeg_var.set(config.get("enable_jpeg_optimization", DEFAULT_SETTINGS["ENABLE_JPEG_OPTIMIZATION"]))
+                    self.optimize_png_var.set(config.get("enable_png_optimization", DEFAULT_SETTINGS["ENABLE_PNG_OPTIMIZATION"]))
                     self.tinypng_api_key_var.set(config.get("tinypng_api_key", DEFAULT_SETTINGS["TINIFY_API_KEY"]))
                     self.png_compressor_var.set(config.get("png_compressor", "tinypng"))
                     self.png_level_start_var.set(config.get("png_level_start", DEFAULT_SETTINGS["INITIAL_PNG_OPTIMIZATION_LEVEL"]))
@@ -520,6 +541,8 @@ class HyperZipApp(ctk.CTk):
             "zpaq_path": self.zpaq_path_var.get(),
             "enable_minification": self.minify_var.get(),
             "enable_image_compression": self.compress_images_var.get(),
+            "enable_jpeg_optimization": self.optimize_jpeg_var.get(),
+            "enable_png_optimization": self.optimize_png_var.get(),
             "tinypng_api_key": self.tinypng_api_key_var.get(),
             "png_compressor": self.png_compressor_var.get(),
             "png_level_start": self.png_level_start_var.get(),
