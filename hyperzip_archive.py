@@ -45,7 +45,13 @@ def get_archive_profiles(settings):
 # --- Main Processing and Archiving Loop for a Single Folder ---
 def process_and_archive_folder(folder_path, base_dir, settings, archive_profiles_config):
     """Copies, processes, archives (using selected profile), and adjusts quality for one folder.
-       Returns final size, final PNG level, final JPEG quality."""
+       Returns final size, original size, final PNG level, final JPEG quality."""
+    
+    # Calculate original folder size
+    from hyperzip_utils import get_folder_size
+    original_size_bytes = get_folder_size(folder_path)
+    original_size_kb = original_size_bytes / 1024.0
+    _log_func(f"  {Fore.CYAN}Original folder size: {original_size_kb:.2f} KB{Style.RESET_ALL}")
 
     # Extract settings for clarity
     initial_png_level = settings['INITIAL_PNG_OPTIMIZATION_LEVEL']
@@ -57,6 +63,11 @@ def process_and_archive_folder(folder_path, base_dir, settings, archive_profiles
     find_optimal = settings['FIND_OPTIMAL_QUALITY']
     enable_minification = settings['ENABLE_MINIFICATION']
     enable_image_compression = settings['ENABLE_IMAGE_COMPRESSION']
+    
+    # Get PNG and JPEG compression settings
+    enable_png_compression = settings.get('ENABLE_PNG_COMPRESSION', enable_image_compression)
+    enable_jpeg_compression = settings.get('ENABLE_JPEG_COMPRESSION', enable_image_compression)
+    
     tinify_api_key_valid = settings['TINIFY_API_KEY_VALID'] # Initial status
     # Get the PNG compressor setting, default to 'tinypng' if missing
     png_compressor = settings.get('png_compressor', 'tinypng').lower() 
@@ -74,7 +85,7 @@ def process_and_archive_folder(folder_path, base_dir, settings, archive_profiles
     profile_name = settings['ARCHIVE_PROFILE']
     if profile_name not in archive_profiles_config:
         _log_func(f"{Fore.RED}Error: Profile '{profile_name}' not found in provided config.{Style.RESET_ALL}")
-        return -1, initial_png_level, initial_jpeg_quality # Error state
+        return -1, original_size_kb, initial_png_level, initial_jpeg_quality # Error state
 
     profile_config = archive_profiles_config[profile_name]
     tool_family = profile_config["tool_family"]
@@ -106,9 +117,16 @@ def process_and_archive_folder(folder_path, base_dir, settings, archive_profiles
                 return -1, initial_png_level, initial_jpeg_quality
 
             # 2. Process files in temp copy (pass relevant settings)
+            # Create a settings dictionary to pass to process_files_in_folder
+            process_settings = {
+                'ENABLE_MINIFICATION': enable_minification,
+                'ENABLE_PNG_COMPRESSION': enable_png_compression,
+                'ENABLE_JPEG_COMPRESSION': enable_jpeg_compression
+            }
+            
             saved_bytes, original_image_size_sum, tinify_api_key_valid = process_files_in_folder(
                 temp_folder, png_compressor, current_png_level, current_jpeg_quality,
-                enable_minification, enable_image_compression, tinify_api_key_valid
+                process_settings, enable_image_compression, tinify_api_key_valid
             )
             # _log_func(f"  {Fore.WHITE}DEBUG: process_files_in_folder returned saved_bytes={saved_bytes}, original_size={original_image_size_sum}, key_valid={tinify_api_key_valid}{Style.RESET_ALL}") # Removed DEBUG log
 
@@ -119,7 +137,7 @@ def process_and_archive_folder(folder_path, base_dir, settings, archive_profiles
                 if temp_folder and os.path.exists(temp_folder):
                     shutil.rmtree(temp_folder, ignore_errors=True)
                 # Return error state or last known good state? Returning error for now.
-                return -1, current_png_level, current_jpeg_quality
+                return -1, original_size_kb, current_png_level, current_jpeg_quality
 
             # 3. Archive the temporary folder
             cmd = []
@@ -199,19 +217,19 @@ def process_and_archive_folder(folder_path, base_dir, settings, archive_profiles
                         if temp_folder and os.path.exists(temp_folder):
                             # Use top-level shutil
                             shutil.rmtree(temp_folder, ignore_errors=True)
-                        return -1, current_png_level, current_jpeg_quality # Error state
+                        return -1, original_size_kb, current_png_level, current_jpeg_quality # Error state
                 except FileNotFoundError:
                     _log_func(f"{Fore.RED}Error: Archiver executable not found at '{archiver_executable}'. Check path.{Style.RESET_ALL}")
                     if temp_folder and os.path.exists(temp_folder):
                         # Use top-level shutil
                         shutil.rmtree(temp_folder, ignore_errors=True)
-                    return -1, current_png_level, current_jpeg_quality
+                    return -1, original_size_kb, current_png_level, current_jpeg_quality
                 except Exception as subproc_e:
                     _log_func(f"{Fore.RED}Error running archiver: {subproc_e}{Style.RESET_ALL}")
                     if temp_folder and os.path.exists(temp_folder):
                         # Use top-level shutil
                         shutil.rmtree(temp_folder, ignore_errors=True)
-                    return -1, current_png_level, current_jpeg_quality
+                    return -1, original_size_kb, current_png_level, current_jpeg_quality
 
             # 4. Check Archive Size
             try:
@@ -264,13 +282,13 @@ def process_and_archive_folder(folder_path, base_dir, settings, archive_profiles
                             shutil.rmtree(temp_folder, ignore_errors=True)
                         # Return the best fit found
                         # _log_func(f"  {Fore.WHITE}DEBUG: Returning best fit (initial/max quality reached).{Style.RESET_ALL}") # Removed DEBUG log
-                        return best_fit_size_kb, best_fit_settings_tuple[0], best_fit_settings_tuple[1]
+                        return best_fit_size_kb, original_size_kb, best_fit_settings_tuple[0], best_fit_settings_tuple[1]
                 else: # find_optimal == False
                     # _log_func(f"  {Fore.WHITE}DEBUG: find_optimal=False. Returning first success.{Style.RESET_ALL}") # Removed DEBUG log
                     if temp_folder:
                         # Use top-level shutil
                         shutil.rmtree(temp_folder, ignore_errors=True)
-                    return file_size_kb, current_png_level, current_jpeg_quality # Return first success
+                    return file_size_kb, original_size_kb, current_png_level, current_jpeg_quality # Return first success
 
             else: # file_size_kb > max_size_kb
                 _log_func(f"  {Fore.YELLOW}Warning: Size ({file_size_kb:.2f} KB) > limit ({max_size_kb} KB).{Style.RESET_ALL}")
@@ -286,7 +304,7 @@ def process_and_archive_folder(folder_path, base_dir, settings, archive_profiles
                         # Use top-level shutil
                         shutil.rmtree(temp_folder, ignore_errors=True)
                     # _log_func(f"  {Fore.WHITE}DEBUG: Returning reverted best fit.{Style.RESET_ALL}") # Removed DEBUG log
-                    return best_fit_size_kb, best_fit_settings_tuple[0], best_fit_settings_tuple[1]
+                    return best_fit_size_kb, original_size_kb, best_fit_settings_tuple[0], best_fit_settings_tuple[1]
 
                 # --- Check if size reduction stopped working ---
                 # If size increased or stayed same after reducing quality
@@ -298,7 +316,7 @@ def process_and_archive_folder(folder_path, base_dir, settings, archive_profiles
                         shutil.rmtree(temp_folder, ignore_errors=True)
                     # Return the size and settings from the PREVIOUS attempt.
                     # _log_func(f"  {Fore.WHITE}DEBUG: Returning previous attempt's result (size didn't decrease).{Style.RESET_ALL}") # Removed DEBUG log
-                    return last_archive_size_kb, last_settings_tuple[0], last_settings_tuple[1]
+                    return last_archive_size_kb, original_size_kb, last_settings_tuple[0], last_settings_tuple[1]
 
                 # --- Check if minimum quality reached ---
                 # _log_func(f"  {Fore.WHITE}DEBUG: Checking min quality (Current PNG={current_png_level}, Min PNG={min_png_level}; Current JPEG={current_jpeg_quality}, Min JPEG={min_jpeg_quality}).{Style.RESET_ALL}") # Removed DEBUG log
@@ -308,7 +326,7 @@ def process_and_archive_folder(folder_path, base_dir, settings, archive_profiles
                         shutil.rmtree(temp_folder, ignore_errors=True)
                     # Return the current (oversized) state as the best possible failure
                     # _log_func(f"  {Fore.WHITE}DEBUG: Returning current oversized state (min quality reached).{Style.RESET_ALL}") # Removed DEBUG log
-                    return file_size_kb, min_png_level, min_jpeg_quality
+                    return file_size_kb, original_size_kb, min_png_level, min_jpeg_quality
 
                 # --- Reduce quality for the next attempt ---
                 # _log_func(f"  {Fore.WHITE}DEBUG: Reducing quality... Current PNG={current_png_level}, JPEG={current_jpeg_quality}{Style.RESET_ALL}") # Removed DEBUG log
@@ -367,7 +385,7 @@ def process_and_archive_folder(folder_path, base_dir, settings, archive_profiles
                         shutil.rmtree(temp_folder, ignore_errors=True)
                     # Return current oversized state
                     # _log_func(f"  {Fore.WHITE}DEBUG: Returning current oversized state (no reduction made).{Style.RESET_ALL}") # Removed DEBUG log
-                    return file_size_kb, current_png_level, current_jpeg_quality
+                    return file_size_kb, original_size_kb, current_png_level, current_jpeg_quality
 
                 # --- Prepare for the next iteration ---
                 last_archive_size_kb = file_size_kb # Store current size for next check
@@ -402,7 +420,7 @@ def process_and_archive_folder(folder_path, base_dir, settings, archive_profiles
                 # Use top-level shutil
                 _log_func(f"  {Fore.WHITE}Cleaning up temp folder after exception: {temp_folder}{Style.RESET_ALL}")
                 shutil.rmtree(temp_folder, ignore_errors=True)
-            return -1, current_png_level, current_jpeg_quality # Return error state
+            return -1, original_size_kb, current_png_level, current_jpeg_quality # Return error state
         finally:
             # Ensure temp folder is cleaned up if loop breaks unexpectedly
              if temp_folder and os.path.exists(temp_folder):

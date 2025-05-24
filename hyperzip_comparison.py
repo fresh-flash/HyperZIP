@@ -189,8 +189,18 @@ class ComparisonResultsFrame(ctk.CTkFrame):
         for i, width in enumerate([3, 1, 1, 1]):
             self.file_scrollable_frame.grid_columnconfigure(i, weight=width)
         
-        # Add file rows from results_data
+        # Add file rows from results_data (only use actual data)
         files_to_display = results_data.get("files", [])
+        
+        # If no files to display, show a message instead
+        if not files_to_display:
+            no_data_label = ctk.CTkLabel(
+                self.file_scrollable_frame, 
+                text="No file data available", 
+                font=("Arial", 14, "italic"),
+                text_color="#aaaaaa"
+            )
+            no_data_label.grid(row=0, column=0, columnspan=4, padx=10, pady=20, sticky="ew")
         
         for i, (filename, original, compressed, optimized) in enumerate(files_to_display):
             row_bg = "#2b2b2b" if i % 2 == 0 else "#333333"

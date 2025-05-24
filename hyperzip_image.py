@@ -111,9 +111,10 @@ def compress_png_with_oxipng(file_path, oxipng_level):
 
 
 # --- Image Compression Function (Unified) ---
-def compress_image(file_path, png_compressor, png_level, jpeg_quality, tinify_api_key_valid):
+def compress_image(file_path, png_compressor, png_level, jpeg_quality, tinify_api_key_valid, enable_png_compression=True, enable_jpeg_compression=True):
     """Compresses one image using the selected PNG compressor or TinyPNG/Pillow for others.
-       Requires tinify_api_key_valid status passed in."""
+       Requires tinify_api_key_valid status passed in.
+       enable_png_compression and enable_jpeg_compression control whether each type is processed."""
 
     original_size = 0; saved_bytes = 0
     file_basename = os.path.basename(file_path)
@@ -139,6 +140,10 @@ def compress_image(file_path, png_compressor, png_level, jpeg_quality, tinify_ap
     try:
         # --- PNG Compression ---
         if ext in PNG_EXTENSIONS:
+            if not enable_png_compression:
+                _log_func(f"{Fore.YELLOW}  Skipping PNG compression for {file_basename} (PNG compression disabled).{Style.RESET_ALL}")
+                return 0, original_size, current_tinify_valid
+                
             processed = True
             if png_compressor == "oxipng":
                 # Use Oxipng
@@ -157,6 +162,10 @@ def compress_image(file_path, png_compressor, png_level, jpeg_quality, tinify_ap
 
         # --- JPEG Compression ---
         elif ext in JPEG_EXTENSIONS:
+            if not enable_jpeg_compression:
+                _log_func(f"{Fore.YELLOW}  Skipping JPEG compression for {file_basename} (JPEG compression disabled).{Style.RESET_ALL}")
+                return 0, original_size, current_tinify_valid
+                
             processed = True
             if not current_tinify_valid:
                  _log_func(f"{Fore.YELLOW}  Skipping TinyPNG for {file_basename} (API key issue). Pillow only.{Style.RESET_ALL}")
@@ -242,9 +251,11 @@ def compress_image(file_path, png_compressor, png_level, jpeg_quality, tinify_ap
 
 
 # --- Process Images in Folder ---
-def process_images_in_folder(folder_path, png_compressor, current_png_level, current_jpeg_quality, tinify_api_key_valid):
+def process_images_in_folder(folder_path, png_compressor, current_png_level, current_jpeg_quality, tinify_api_key_valid, 
+                            enable_png_compression=True, enable_jpeg_compression=True):
     """Compresses images in the specified folder using the selected method.
-       Returns total saved bytes, total original size, and updated tinify_api_key_valid status."""
+       Returns total saved bytes, total original size, and updated tinify_api_key_valid status.
+       enable_png_compression and enable_jpeg_compression control whether each type is processed."""
     image_files = []
     total_original_image_size = 0
     total_saved_image_bytes = 0
@@ -283,7 +294,9 @@ def process_images_in_folder(folder_path, png_compressor, current_png_level, cur
                                           png_compressor=png_compressor,
                                           png_level=current_png_level,
                                           jpeg_quality=current_jpeg_quality,
-                                          tinify_api_key_valid=current_tinify_valid)
+                                          tinify_api_key_valid=current_tinify_valid,
+                                          enable_png_compression=enable_png_compression,
+                                          enable_jpeg_compression=enable_jpeg_compression)
 
         # --- Run sequentially instead of concurrently to avoid potential issues ---
         # _log_func(f"  {Fore.WHITE}DEBUG: Running image compression sequentially.{Style.RESET_ALL}") # Removed DEBUG log

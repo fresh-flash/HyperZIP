@@ -48,11 +48,48 @@ HyperZip is a desktop application for optimizing and compressing banner folders 
 
 #### Windows
 
-1. Run the build script:
-   ```bash
-   build_windows.bat
+1. Use the one-click build script (recommended for beginners):
+   ```powershell
+   # In PowerShell:
+   .\start-build.ps1         # One-click build script for PowerShell
    ```
-   Or manually:
+   ```cmd
+   # In Command Prompt:
+   start-build.bat           # One-click build script for Command Prompt
+   ```
+
+   These scripts will automatically build HyperZip without requiring any additional commands.
+
+2. Or use the interactive build helper:
+   ```powershell
+   # In PowerShell:
+   .\build.ps1               # Interactive build helper for PowerShell
+   ```
+   ```cmd
+   # In Command Prompt:
+   build.bat                 # Interactive build helper for Command Prompt
+   ```
+
+   These helper scripts will detect your environment and guide you through the build process.
+
+3. Or run one of the build scripts directly:
+   ```powershell
+   # In PowerShell:
+   .\build_all.ps1            # Builds for Windows and attempts macOS build if possible
+   .\build_windows.bat        # Builds for Windows only
+   .\build_all.bat            # Builds for Windows and attempts macOS build if possible
+   ```
+   ```cmd
+   # In Command Prompt:
+   build_windows.bat          # Builds for Windows only
+   build_all.bat              # Builds for Windows and attempts macOS build if possible
+   ```
+   
+   > **Important Note for PowerShell Users**: 
+   > In PowerShell, you must prefix script names with `.\` to run them from the current directory.
+   > For example, use `.\start-build.ps1` instead of just `start-build.ps1`.
+   
+4. Or build manually:
    ```bash
    pip install pyinstaller
    pyinstaller HyperZip.spec
@@ -61,10 +98,13 @@ HyperZip is a desktop application for optimizing and compressing banner folders 
 
 #### macOS
 
-1. Run the build script:
+1. Run one of the build scripts:
    ```bash
    chmod +x build_macos.sh
-   ./build_macos.sh
+   ./build_macos.sh    # Builds for macOS only
+   
+   chmod +x build_all.sh
+   ./build_all.sh      # Builds for macOS and attempts Windows build if Wine is available
    ```
    Or manually:
    ```bash
@@ -72,6 +112,12 @@ HyperZip is a desktop application for optimizing and compressing banner folders 
    pyinstaller HyperZip.spec
    ```
 2. Find the application bundle in the `dist` folder
+
+#### Building for Both Platforms
+
+- On Windows (PowerShell): `.\build_all.ps1`
+- On Windows (Command Prompt): `build_all.bat`
+- On macOS: `./build_all.sh`
 
 For detailed build instructions, see [build_instructions.md](build_instructions.md).
 

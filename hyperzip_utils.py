@@ -2,6 +2,20 @@ import os
 import shutil
 from hyperzip_core import _log_func, Fore, Style
 
+# --- Calculate Folder Size ---
+def get_folder_size(folder_path):
+    """Calculate the total size of a folder in bytes."""
+    total_size = 0
+    for dirpath, dirnames, filenames in os.walk(folder_path):
+        for filename in filenames:
+            file_path = os.path.join(dirpath, filename)
+            try:
+                total_size += os.path.getsize(file_path)
+            except (FileNotFoundError, PermissionError):
+                # Skip files that can't be accessed
+                pass
+    return total_size
+
 # --- Temp Folder Function ---
 def create_temp_folder(original_folder, base_dir):
     """Creates a temporary copy of the folder for processing inside base_dir."""
@@ -39,7 +53,7 @@ def create_temp_folder(original_folder, base_dir):
 
 # --- Process Files in Folder ---
 def process_files_in_folder(folder_path, png_compressor, current_png_level, current_jpeg_quality,
-                            enable_minification, enable_image_compression, tinify_api_key_valid):
+                            process_settings, enable_image_compression, tinify_api_key_valid):
     """Minifies text files and compresses images in the specified folder using the selected PNG compressor.
        Returns total saved bytes, total original size, and updated tinify_api_key_valid status."""
     
@@ -57,6 +71,7 @@ def process_files_in_folder(folder_path, png_compressor, current_png_level, curr
             file_list.append(os.path.join(root, file))
 
     # 1. Minify Text Files
+    enable_minification = process_settings.get('ENABLE_MINIFICATION', False)
     if enable_minification:
         # _log_func(f"  {Fore.YELLOW}Minifying text files...{Style.RESET_ALL}") # Less verbose
         minify_tasks = [p for p in file_list if os.path.splitext(p)[1].lower() in ['.html', '.js', '.css']]
@@ -71,8 +86,21 @@ def process_files_in_folder(folder_path, png_compressor, current_png_level, curr
     # Note: We attempt compression even if tinify key is invalid, as oxipng might be selected.
     # process_images_in_folder will handle the tinify key check internally if needed.
     if enable_image_compression:
+        # Check if we have the new separate compression settings
+        enable_png = True
+        enable_jpeg = True
+        
+        # If this is a dictionary with separate settings, use them
+        if isinstance(process_settings, dict):
+            # Check if we have separate PNG and JPEG settings in the parent settings
+            if 'ENABLE_PNG_COMPRESSION' in process_settings:
+                enable_png = process_settings.get('ENABLE_PNG_COMPRESSION', True)
+            if 'ENABLE_JPEG_COMPRESSION' in process_settings:
+                enable_jpeg = process_settings.get('ENABLE_JPEG_COMPRESSION', True)
+        
         total_saved_image_bytes, total_original_image_size, current_tinify_valid = process_images_in_folder(
-            folder_path, png_compressor, current_png_level, current_jpeg_quality, tinify_api_key_valid
+            folder_path, png_compressor, current_png_level, current_jpeg_quality, tinify_api_key_valid,
+            enable_png_compression=enable_png, enable_jpeg_compression=enable_jpeg
         )
 
     return total_saved_image_bytes, total_original_image_size, current_tinify_valid

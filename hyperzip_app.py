@@ -10,6 +10,7 @@ import io
 import re # Import regex module
 import time
 from datetime import datetime
+from colorama import Fore, Style  # Import for colored terminal output
 
 # Import from our modular structure
 from hyperzip_core import DEFAULT_SETTINGS
@@ -106,16 +107,21 @@ class FileProcessingResultsFrame(ctk.CTkFrame):
         ctk.CTkLabel(type_grid, text="Optimized", font=type_header_font, text_color="#4ecca3").grid(row=0, column=2, padx=10, pady=5, sticky="e")
         ctk.CTkLabel(type_grid, text="Savings", font=type_header_font, text_color="#f4d03f").grid(row=0, column=3, padx=10, pady=5, sticky="e")
         
-        # Add breakdown by file type (example data)
-        self.file_type_breakdown = [
-            ("HTML", "8.9 MB", "4.5 MB", "-49.4%"),
-            ("CSS", "12.8 MB", "6.2 MB", "-51.6%"),
-            ("JavaScript", "28.4 MB", "12.1 MB", "-57.4%"),
-            ("JPEG Images", "34.2 MB", "18.9 MB", "-44.7%"),
-            ("PNG Images", "67.8 MB", "23.4 MB", "-65.5%")
-        ]
+        # Create file type breakdown data from results if available
+        self.file_type_breakdown = []
         
-        # Add the file type breakdown data
+        # If we have actual data, we could populate this from results_data
+        # For now, we'll just show a message if no data is available
+        if not self.file_type_breakdown:
+            no_data_label = ctk.CTkLabel(
+                type_grid, 
+                text="No file type breakdown available", 
+                font=("Arial", 14, "italic"),
+                text_color="#aaaaaa"
+            )
+            no_data_label.grid(row=1, column=0, columnspan=4, padx=10, pady=20, sticky="ew")
+        
+        # Add the file type breakdown data if available
         for i, (file_type, original, optimized, savings) in enumerate(self.file_type_breakdown):
             row_bg = "#333333" if i % 2 == 0 else "#3a3a3a"
             
@@ -164,19 +170,8 @@ class FileProcessingResultsFrame(ctk.CTkFrame):
         for i, width in enumerate([3, 1, 1, 1]):
             self.scrollable_frame.grid_columnconfigure(i, weight=width)
         
-        # Add file rows (example data)
-        example_files = [
-            ("300x600.zip", "3.2 MB", "698 KB", "245 KB"),
-            ("180x600.zip", "1.8 MB", "623 KB", "387 KB"),
-            ("400x300.zip", "856 KB", "496 KB", "298 KB"),
-            ("200x150.zip", "245 KB", "101 KB", "67 KB"),
-            ("120x80.zip", "89 KB", "43 KB", "28 KB"),
-            ("500x800.zip", "4.7 MB", "794 KB", "312 KB"),
-            ("250x200.zip", "267 KB", "149 KB", "89 KB")
-        ]
-        
-        # Add the actual file data from results_data if available
-        files_to_display = results_data.get("files", []) if results_data.get("files") else example_files
+        # Only use actual file data from results_data
+        files_to_display = results_data.get("files", [])
         
         for i, (filename, original, in_archive, optimized) in enumerate(files_to_display):
             row_bg = "#2b2b2b" if i % 2 == 0 else "#333333"
@@ -943,11 +938,52 @@ class HyperZipApp(ctk.CTk):
                 log_capture.write(message + "\n")
                 self.log_queue.put(message)
             
-            # Run the main processing function
-            result = run_packing(settings, logger_func=logger_func)
-            
-            # Process completed
-            self.log_queue.put(f"\n--- Processing completed ---")
+            try:
+                # Run the main processing function
+                result = run_packing(settings, logger_func=logger_func)
+                
+                # Process completed
+                self.log_queue.put(f"\n--- Processing completed ---")
+            except KeyError as e:
+                # Handle specific KeyError exceptions with a clear error message
+                error_message = f"{Fore.RED}ERROR: '{e}'{Style.RESET_ALL}"
+                self.log_queue.put(error_message)
+                
+                # Add traceback for debugging
+                import traceback
+                tb_str = traceback.format_exc()
+                self.log_queue.put(f"{Fore.RED}Traceback:{Style.RESET_ALL}\n{tb_str}")
+                
+                # Create a minimal result dictionary with error information
+                result = {
+                    "success": False,
+                    "message": f"Missing required setting: {e}",
+                    "summary_lines": [error_message],
+                    "results_per_folder": [],
+                    "success_count": 0,
+                    "fail_count": 0,
+                    "total_size_kb": 0
+                }
+            except Exception as e:
+                # Handle other exceptions
+                error_message = f"{Fore.RED}ERROR: {str(e)}{Style.RESET_ALL}"
+                self.log_queue.put(error_message)
+                
+                # Add traceback for debugging
+                import traceback
+                tb_str = traceback.format_exc()
+                self.log_queue.put(f"{Fore.RED}Traceback:{Style.RESET_ALL}\n{tb_str}")
+                
+                # Create a minimal result dictionary with error information
+                result = {
+                    "success": False,
+                    "message": f"Processing error: {str(e)}",
+                    "summary_lines": [error_message],
+                    "results_per_folder": [],
+                    "success_count": 0,
+                    "fail_count": 0,
+                    "total_size_kb": 0
+                }
             
             # Prepare data for the comparison results
             total_original_size = 0
@@ -959,40 +995,61 @@ class HyperZipApp(ctk.CTk):
             # Extract data from the results
             if "results_per_folder" in result and result["results_per_folder"]:
                 for folder_result in result["results_per_folder"]:
-                    if folder_result["status"] == "Success":
-                        # Add to totals
-                        original_size_kb = folder_result.get("original_size_kb", 0)
-                        archive_size_kb = folder_result.get("size_kb", 0)
-                        optimized_size_kb = folder_result.get("optimized_size_kb", archive_size_kb)
-                        
-                        total_original_size += original_size_kb
-                        total_archive_size += archive_size_kb
-                        total_optimized_size += optimized_size_kb
-                        file_count += 1
-                        
-                        # Use the original_size_kb from the folder_result
-                        original_size_kb = folder_result.get("original_size_kb", 0)
-                        original_size_str = self.format_size(original_size_kb * 1024)
-                        
-                        # Format other sizes for display
-                        archive_size_str = self.format_size(archive_size_kb * 1024)
-                        optimized_size_str = self.format_size(optimized_size_kb * 1024)
-                        
-                        # Add to files data
-                        files_data.append((
-                            folder_result["archive_name"],
-                            original_size_str,
-                            archive_size_str,
-                            optimized_size_str
-                        ))
+                    # Add to totals (include both successful and oversized archives)
+                    original_size_kb = folder_result.get("original_size_kb", 0)
+                    archive_size_kb = folder_result.get("size_kb", 0)
+                    optimized_size_kb = folder_result.get("optimized_size_kb", archive_size_kb)
+                    
+                    total_original_size += original_size_kb
+                    total_archive_size += archive_size_kb
+                    total_optimized_size += optimized_size_kb
+                    file_count += 1
+                    
+                    # Use the original_size_kb from the folder_result
+                    original_size_kb = folder_result.get("original_size_kb", 0)
+                    original_size_str = self.format_size(original_size_kb * 1024)
+                    
+                    # Format other sizes for display
+                    archive_size_str = self.format_size(archive_size_kb * 1024)
+                    optimized_size_str = self.format_size(optimized_size_kb * 1024)
+                    
+                    # Add to files data (include both successful and oversized archives)
+                    files_data.append((
+                        folder_result["archive_name"],
+                        original_size_str,
+                        archive_size_str,
+                        optimized_size_str
+                    ))
+            
+            # Extract total size from the result summary lines
+            total_size_kb = 0
+            oversized_count = 0
+            
+            # Parse the summary lines to extract the actual values from the terminal output
+            if "summary_lines" in result:
+                for line in result["summary_lines"]:
+                    # Look for the total size line
+                    if "Total size of final archives" in line:
+                        # Extract the KB value using regex
+                        import re
+                        size_match = re.search(r'(\d+\.\d+)\s*KB', line)
+                        if size_match:
+                            total_size_kb = float(size_match.group(1))
+                    
+                    # Look for the oversized archives count
+                    if "archive(s) exceeded" in line:
+                        # Extract the count using regex
+                        count_match = re.search(r'(\d+)\s*archive\(s\) exceeded', line)
+                        if count_match:
+                            oversized_count = int(count_match.group(1))
             
             # Convert KB to MB for the summary
             total_original_mb = total_original_size / 1024
-            total_archive_mb = total_archive_size / 1024
+            total_archive_mb = total_size_kb / 1024 if total_size_kb > 0 else total_archive_size / 1024
             total_optimized_mb = total_optimized_size / 1024
             
             # Calculate saved space
-            saved_mb = total_original_mb - total_optimized_mb
+            saved_mb = total_original_mb - total_archive_mb
             saved_percent = (saved_mb / total_original_mb * 100) if total_original_mb > 0 else 0
             
             # Estimate breakdown by file type (simplified)
@@ -1001,32 +1058,26 @@ class HyperZipApp(ctk.CTk):
             code_mb = saved_mb * 0.3    # Assume 30% of savings from code
             other_mb = saved_mb * 0.1   # Assume 10% from other files
             
-            # Get the project folder size
-            project_folder = settings["PROJECT_FOLDER"]
-            try:
-                import os
-                
-                # Calculate the total size of the project folder
-                total_size = 0
-                for dirpath, dirnames, filenames in os.walk(project_folder):
-                    for f in filenames:
-                        fp = os.path.join(dirpath, f)
-                        if os.path.exists(fp):
-                            total_size += os.path.getsize(fp)
-                
-                # Convert to MB
-                project_size_mb = total_size / (1024 * 1024)
-                
-                # Use this as the before_size
-                before_size = f"{project_size_mb:.1f}"
-            except Exception as e:
-                self.log_queue.put(f"Error calculating project size: {e}")
-                before_size = f"{total_original_mb:.1f}"
+            # Use the actual values from the terminal output
+            before_size = f"{total_original_mb:.1f}"
+            after_size = f"{total_archive_mb:.1f}"
+            
+            # Calculate total original size from the results
+            total_original_size_kb = 0
+            for folder_result in result.get("results_per_folder", []):
+                total_original_size_kb += folder_result.get("original_size_kb", 0)
+            
+            # Convert KB to MB for the summary
+            total_original_mb = total_original_size_kb / 1024
+            
+            # Use the actual values from the terminal output and folder sizes
+            before_size = f"{total_original_mb:.1f}"
+            after_size = f"{total_archive_mb:.1f}"
             
             # Update the results data
             self.results_data = {
                 "before_size": before_size,
-                "after_size": f"{total_optimized_mb:.1f}",
+                "after_size": after_size,
                 "file_count": f"{file_count}",
                 "saved_mb": f"{saved_mb:.1f}",
                 "saved_percent": f"{saved_percent:.1f}",
@@ -1356,29 +1407,8 @@ class HyperZipApp(ctk.CTk):
         # Import the ComparisonResultsFrame class
         from hyperzip_comparison import ComparisonResultsFrame
         
-        # Use the actual data from the processing results
-        # If we don't have real data yet, use example data
-        if not self.results_data["files"]:
-            # Example data for testing
-            self.results_data = {
-                "before_size": "245.8",
-                "after_size": "89.3",
-                "file_count": "1,247",
-                "saved_mb": "156.5",
-                "saved_percent": "63.7",
-                "images_mb": "89.2",
-                "code_mb": "45.8",
-                "other_mb": "21.5",
-                "files": [
-                    ("300x600.zip", "3.2 MB", "698 KB", "245 KB"),
-                    ("180x600.zip", "1.8 MB", "623 KB", "387 KB"),
-                    ("400x300.zip", "856 KB", "496 KB", "298 KB"),
-                    ("200x150.zip", "245 KB", "101 KB", "67 KB"),
-                    ("120x80.zip", "89 KB", "43 KB", "28 KB"),
-                    ("500x800.zip", "4.7 MB", "794 KB", "312 KB"),
-                    ("250x200.zip", "267 KB", "149 KB", "89 KB")
-                ]
-            }
+        # Use only the actual data from the processing results
+        # Never use example data, even if there are no files
         
         # Create the results frame as an overlay
         self.comparison_frame = ComparisonResultsFrame(self, self.results_data, close_callback=self.hide_comparison_results)

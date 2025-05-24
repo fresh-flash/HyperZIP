@@ -64,7 +64,19 @@ def run_packing(settings, logger_func=print):
 
     # --- Validate TinyPNG Key ---
     tinify_api_key_valid = False
-    if settings['ENABLE_IMAGE_COMPRESSION']:
+    
+    # Check if we have the new separate compression settings or the old combined one
+    enable_image_compression = False
+    
+    # Always check for the new separate settings first
+    enable_png = settings.get('ENABLE_PNG_COMPRESSION', False)
+    enable_jpeg = settings.get('ENABLE_JPEG_COMPRESSION', False)
+    enable_image_compression = enable_png or enable_jpeg
+    
+    # Add the combined setting for backward compatibility
+    settings['ENABLE_IMAGE_COMPRESSION'] = enable_image_compression
+    
+    if enable_image_compression:
         api_key = settings.get('TINIFY_API_KEY')
         if not api_key:
             _log_func(f"{Fore.RED}Warning: Image compression enabled, but TINIFY_API_KEY is missing. Disabling compression.{Style.RESET_ALL}")
@@ -97,7 +109,28 @@ def run_packing(settings, logger_func=print):
         return {"success": False, "message": f"Missing library: {e.name}"}
 
     # --- Print Selected Options ---
-    _log_func(f"{Fore.YELLOW}Minification: {'Enabled' if settings['ENABLE_MINIFICATION'] else 'Disabled'}{Style.RESET_ALL}")
+    # Handle the new minification structure
+    enable_minification = False
+    if isinstance(settings.get('ENABLE_MINIFICATION'), dict):
+        # New structure with separate HTML, CSS, JS settings
+        minify_settings = settings['ENABLE_MINIFICATION']
+        enable_html = minify_settings.get('ENABLE_HTML_MINIFICATION', False)
+        enable_css = minify_settings.get('ENABLE_CSS_MINIFICATION', False)
+        enable_js = minify_settings.get('ENABLE_JS_MINIFICATION', False)
+        enable_minification = enable_html or enable_css or enable_js
+        _log_func(f"{Fore.YELLOW}Minification: {'Enabled' if enable_minification else 'Disabled'}{Style.RESET_ALL}")
+        if enable_minification:
+            _log_func(f"  HTML: {'Enabled' if enable_html else 'Disabled'}")
+            _log_func(f"  CSS: {'Enabled' if enable_css else 'Disabled'}")
+            _log_func(f"  JS: {'Enabled' if enable_js else 'Disabled'}")
+    else:
+        # Old structure with single setting
+        enable_minification = settings.get('ENABLE_MINIFICATION', False)
+        _log_func(f"{Fore.YELLOW}Minification: {'Enabled' if enable_minification else 'Disabled'}{Style.RESET_ALL}")
+    
+    # Store the combined setting for backward compatibility
+    settings['ENABLE_MINIFICATION_COMBINED'] = enable_minification
+    
     _log_func(f"{Fore.YELLOW}Image Compression: {'Enabled' if settings['ENABLE_IMAGE_COMPRESSION'] else 'Disabled'}{Style.RESET_ALL}")
     if settings['ENABLE_IMAGE_COMPRESSION']:
         _log_func(f"  PNG Level: {settings['INITIAL_PNG_OPTIMIZATION_LEVEL']} -> {settings['MIN_PNG_OPTIMIZATION_LEVEL']}")
@@ -124,16 +157,17 @@ def run_packing(settings, logger_func=print):
 
         # Call the refactored processing function
         # _log_func(f"  {Fore.WHITE}DEBUG: Calling process_and_archive_folder for '{folder_name}'...{Style.RESET_ALL}") # Removed DEBUG log
-        final_size_kb, final_png_level, final_jpeg = process_and_archive_folder(
+        final_size_kb, original_size_kb, final_png_level, final_jpeg = process_and_archive_folder(
             current_folder_path, base_dir, settings, archive_profiles_config
         )
-        # _log_func(f"  {Fore.WHITE}DEBUG: process_and_archive_folder returned: size={final_size_kb}, png={final_png_level}, jpeg={final_jpeg}{Style.RESET_ALL}") # Removed DEBUG log
+        # _log_func(f"  {Fore.WHITE}DEBUG: process_and_archive_folder returned: size={final_size_kb}, original={original_size_kb}, png={final_png_level}, jpeg={final_jpeg}{Style.RESET_ALL}") # Removed DEBUG log
 
         # --- Analyze Result for this Folder ---
         folder_result = {
             "folder": folder_name,
             "archive_name": archive_output_filename,
             "size_kb": final_size_kb,
+            "original_size_kb": original_size_kb,
             "png_level": int(final_png_level),
             "jpeg_quality": int(final_jpeg),
             "status": "Error" # Default status

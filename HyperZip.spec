@@ -9,7 +9,7 @@ a = Analysis(
     datas=[
         (certifi.where(), 'certifi'),
         ('oxipng.exe', '.'),  # Include oxipng.exe in the root of the packaged app
-        ('oxipng-9.1.4-i686-pc-windows-msvc', 'oxipng-9.1.4-i686-pc-windows-msvc'),  # Include the oxipng directory
+        ('assets/oxipng-9.1.4-i686-pc-windows-msvc', 'oxipng-9.1.4-i686-pc-windows-msvc'),  # Include the oxipng directory
         # Include the tinify certificate bundle
         ('C:\\Users\\05\\AppData\\Local\\Programs\\Python\\Python310\\lib\\site-packages\\tinify\\data\\cacert.pem', 'tinify\\data'),
     ],

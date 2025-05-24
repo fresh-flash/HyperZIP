@@ -3,21 +3,15 @@ echo Building HyperZip for Windows...
 echo.
 
 echo Installing required packages...
-pip install customtkinter pillow htmlmin jsmin csscompressor tinify pyinstaller
+pip install customtkinter pillow htmlmin jsmin csscompressor tinify pyinstaller certifi
 echo.
 
-echo Building executable...
-pyinstaller --name=HyperZip --onefile --windowed --clean ^
-  --hidden-import=PIL._tkinter_finder ^
-  --hidden-import=customtkinter ^
-  --hidden-import=tinify ^
-  --hidden-import=htmlmin ^
-  --hidden-import=jsmin ^
-  --hidden-import=csscompressor ^
-  --hidden-import=tkinter ^
-  --hidden-import=tkinter.filedialog ^
-  --hidden-import=tkinter.messagebox ^
-  hyperzip_app.py
+echo Removing previous build directory...
+if exist dist rmdir /s /q dist
+echo.
+
+echo Building executable with HyperZip.spec...
+pyinstaller --clean HyperZip.spec
 echo.
 
 if exist dist\HyperZip.exe (
